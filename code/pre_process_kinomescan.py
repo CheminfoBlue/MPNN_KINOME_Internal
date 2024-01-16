@@ -83,6 +83,10 @@ df = df.loc[:,~df.isna().all(0)]
 
 #0.b. get & add BLU Id (temporal stamp)
 df.insert(1, 'BLU_ID', df['Compound Name'].str.split('BLU').str[-1])
+#remove overlapping between current and new data - by BLU_ID
+filter_overlap = df.BLU_ID.isin(df_current.BLU_ID)
+print('Removing %d overlapping records between current and new'%(filter_overlap.sum())) if filter_overlap.sum()>0 else print('No overlapping records between current and new')
+df = df.loc[~filter_overlap,:]
 #add ascending temporal order?
 df.sort_values('BLU_ID', ascending=True, inplace=True)
 
