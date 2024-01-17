@@ -27,8 +27,8 @@ kinase_select = pd.read_csv(args.kinase_info)
 select_kinase = kinase_select.Full.tolist()
 select_targets = select_kinase+['S(10)', 'S(35)']
 #ensure current target cols are in order of select_targets
-if (df_current.columns[4:]!=select_targets).any():
-    df_current = df_current.loc[:, ['Compound Name', 'BLU_ID', 'Split', 'Structure']+select_targets]
+if (df_current.columns[3:]!=select_targets).any():
+    df_current = df_current.loc[:, ['Compound Name', 'Split', 'Structure']+select_targets]
 
 
 def poc_filter(df, select_poc=None):
@@ -82,13 +82,12 @@ df = df[~df['Structure'].isna()]
 df = df.loc[:,~df.isna().all(0)]
 
 #0.b. get & add BLU Id (temporal stamp)
-df.insert(1, 'BLU_ID', df['Compound Name'].str.split('BLU').str[-1])
-#remove overlapping between current and new data - by BLU_ID
-filter_overlap = df.BLU_ID.isin(df_current.BLU_ID)
+#remove overlapping between current and new data - by Compound Name / BLU ID
+filter_overlap = df['Compound Name'].isin(df_current['Compound Name'])
 print('Removing %d overlapping records between current and new'%(filter_overlap.sum())) if filter_overlap.sum()>0 else print('No overlapping records between current and new')
 df = df.loc[~filter_overlap,:]
-#add ascending temporal order?
-df.sort_values('BLU_ID', ascending=True, inplace=True)
+#add ascending temporal order
+df.sort_values('Compound Name', key=lambda col: col.str.split('BLU').str[-1], ascending=True, inplace=True)
 
 #1. filter on PoC targets <--> filter out Kd target columns
 #allows for subset of PoC targets -- select_poc
@@ -124,11 +123,12 @@ df_fps_current = pd.concat([df_fps_current, ecfp6_fps], axis=0, ignore_index=Tru
 
 #6. update splits (old df_current --> train & new df_subset_binned --> test) and append -- save updated 'current' files
 df_current['Split'] = 'train'
-df_subset_binned.insert(2, 'Split', 'test')
+df_subset_binned.insert(1, 'Split', 'test')
 if (df_current.columns==df_subset_binned.columns).all():
     df_current = pd.concat([df_current, df_subset_binned], axis=0, ignore_index=True)
     df_current.to_csv(current_file_path, index=False)
     df_fps_current.to_csv(fp_file_path, index=False)
+    print('Updated current kinome profile with %d new records'%len(df_subset_binned))
 else:
     print('mismatching columns, DO NOT APPEND! \nFiles have not been updated.')
 
