@@ -4,7 +4,9 @@ import re
 import pandas as pd
 import numpy as np
 import argparse
+import joblib
 from argparse import *
+from learner import MultiOutputClassifier
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -456,35 +458,42 @@ else:
 def is_sscore_target(x):
     return ('S(10)' in x)|('S(35)' in x)
 
+def is_res_path(p):
+    return ('_scores.csv' in p)|('_preds.csv' in p)|('_model.rds' in p)
+
 def save_results(res, res_pth, update_append=False):
     current_res = None 
     if update_append:
         try:
             current_res = pd.read_csv(res_pth)
         except:
-            print('No current/existing results file to append to \n %s DNE!'%p)
+            print('No current/existing results file to append to \n %s DNE!'%res_pth)
     current_res = pd.concat([current_res, res], axis=0)
     current_res.to_csv(res_pth, index=False)
         
         
-
+kinase_info = pd.read_csv('./data/kinases-on-panel-468.csv')
+kinase_ls_master = kinase_info.Full.tolist()
+target_ls_master = kinase_ls_master+['S(10)', 'S(35)']
 # results_path = './results/LGB'
 results_path = args.results_path
 
-# target_dir_ls = [os.path.join(results_path, p) for p in os.listdir(results_path) if os.path.isdir(os.path.join(results_path, p))]
-# target_ls = [os.path.split(p)[-1] for p in target_dir_ls]
-# preds_ls  = [pd.read_csv(os.path.join(p, 'LGB_test_preds.csv')) for p in target_dir_ls]
-# scores_ls  = [pd.read_csv(os.path.join(p, 'LGB_test_scores.csv')) for p in target_dir_ls]
 
-res_path_ls = [os.path.join(results_path, p) for p in os.listdir(results_path) if ('model.rds' not in p)&('_all.csv' not in p)]
-scores_path_ls = [p for p in res_path_ls if ('scores.csv' in p)]
-preds_path_ls = [p for p in res_path_ls if ('preds.csv' in p)]
-target_ls = [os.path.split(p)[-1].split('_test_preds.csv')[0] for p in preds_path_ls]
+# res_path_ls = [os.path.join(results_path, p) for p in os.listdir(results_path) if ('model.rds' not in p)&('_all.csv' not in p)]
+res_path_ls = [os.path.join(results_path, p) for p in os.listdir(results_path) if is_res_path(p)]
+# preds_path_ls = [p for p in res_path_ls if ('_preds.csv' in p)]
+preds_path_ls = [os.path.join(results_path, t+'_test_preds.csv') for t in target_ls_master]
+# scores_path_ls = [p for p in res_path_ls if ('_scores.csv' in p)]
+scores_path_ls = [os.path.join(results_path, t+'_test_scores.csv') for t in target_ls_master]
+# target_ls = [os.path.split(p)[-1].split('_test_preds.csv')[0] for p in preds_path_ls]
+models_path_ls = [os.path.join(results_path, t+'_model.rds') for t in target_ls_master]
+target_ls = target_ls_master
 sscore_ls = [t for t in target_ls if is_sscore_target(t)]
 kinome_ls = [t for t in target_ls if (t not in sscore_ls)]
 
 preds_ls  = [pd.read_csv(p) for p in preds_path_ls if not is_sscore_target(p)]
 scores_ls  = [pd.read_csv(p) for p in scores_path_ls if not is_sscore_target(p)]
+kinase_pred_models = [joblib.load(p) for p in models_path_ls if not is_sscore_target(p)]
 
 sscore_preds_ls  = [pd.read_csv(p) for p in preds_path_ls if is_sscore_target(p)]
 sscore_scores_ls  = [pd.read_csv(p) for p in scores_path_ls if is_sscore_target(p)]
@@ -495,7 +504,12 @@ try:
     id_cols_select.remove('Split')
 except:
     print('No split column present')
-    
+
+try:
+    id_cols_select.remove('MolWeight')
+except:
+    print('No MolWeight column present')
+
 pred_label_ls = [pd.concat([p.loc[:, p.columns.isin(id_cols)], 
                             pd.DataFrame({t: p.loc[:, ~p.columns.isin(id_cols)].idxmax(axis=1, numeric_only=True).str.split('pred_').str[-1].astype(np.int32)})], axis=1) 
                  for t, p in zip(kinome_ls, preds_ls)]
@@ -551,6 +565,30 @@ try:
     kinome_pred_df.drop(columns=['Split'], inplace=True)
 except:
     print('No split column present')
+try:
+    kinome_pred_df.drop(columns=['MolWeight'], inplace=True)
+except:
+    print('No split column present')
 kinome_pred_df.insert(0, 'run_date', current_date)
 # kinome_pred_df.to_csv(os.path.join(results_path, 'kinome_pred_all.csv'), index=False)
 save_results(kinome_pred_df, res_pth=os.path.join(results_path, 'kinome_pred_all.csv'), update_append=args.append_results)
+
+
+#save combined model -- all 468 kinase pred models as a single multi-output model
+multiout_model = MultiOutputClassifier(n_outputs=len(kinase_pred_models))
+multiout_model.classifiers = kinase_pred_models
+joblib.dump(multiout_model, os.path.join(results_path, 'model_combined.rds'))
+
+for p in models_path_ls:
+    if not is_sscore_target(p):
+        os.remove(p)
+
+
+for p in preds_path_ls:
+    if not is_sscore_target(p):
+        os.remove(p)
+
+
+for p in scores_path_ls:
+    if not is_sscore_target(p):
+        os.remove(p)

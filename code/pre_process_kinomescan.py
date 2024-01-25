@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import re
 from rdkit import Chem
+from rdkit.Chem import PandasTools
 from transforms import compute_features
 import argparse
 import os
@@ -27,7 +28,7 @@ kinase_select = pd.read_csv(args.kinase_info)
 select_kinase = kinase_select.Full.tolist()
 select_targets = select_kinase+['S(10)', 'S(35)']
 #ensure current target cols are in order of select_targets
-if (df_current.columns[3:]!=select_targets).any():
+if (df_current.columns[4:]!=select_targets).any():
     df_current = df_current.loc[:, ['Compound Name', 'Split', 'Structure']+select_targets]
 
 
@@ -104,6 +105,12 @@ df_subset = df_subset.dropna(axis=0, how='all', subset = select_targets, inplace
 df_subset_binned = df_subset.copy()
 df_subset_binned[select_kinase] = binning(df_subset_binned[select_kinase].values, partitions = [10, 35], choicelist=[2, 1, 0])
 
+#4. get molecule weights
+PandasTools.AddMoleculeColumnToFrame(df_subset_binned, smilesCol="Structure", molCol="Mol")
+molCol_data = df_subset_binned.pop('Mol')
+mol_weights = [Chem.rdMolDescriptors.CalcExactMolWt(mol) for mol in molCol_data]
+insert_loc = int(np.where(df_subset_binned.columns=='Structure')[0][0])
+df_subset_binned.insert(loc=insert_loc, column='MolWeight', value=mol_weights) 
 
 #4. define target id-name-shortname df map
 # target_name_id_map = pd.DataFrame(data=np.array([['target'+str(i+1) for i in range(len(poc_cols))], poc_cols]).T,

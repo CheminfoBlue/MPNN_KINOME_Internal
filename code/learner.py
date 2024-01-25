@@ -24,7 +24,10 @@ from sklearn.metrics import r2_score,mean_squared_error, make_scorer, matthews_c
 from scipy.stats import pearsonr
 from sklearn.preprocessing import RobustScaler
 
-
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sklearn.utils.multiclass import check_classification_targets
+    
 ModelType = Union[RandomForestRegressor, RandomForestClassifier, XGBRegressor, XGBClassifier, LGBMRegressor, LGBMClassifier, SVR, SVC, KNeighborsRegressor, KNeighborsClassifier]
 model_classes = {
     'regression': 
@@ -40,7 +43,7 @@ model_classes = {
      'LGB': LGBMClassifier,
      'SVM': SVC, 
      'KNN': KNeighborsClassifier,
-     'wKNN': KNeighborsClassifier
+     'wKNN': KNeighborsClassifier,
                   },
     'multiclass': 
     {'RF': RandomForestClassifier,
@@ -48,6 +51,7 @@ model_classes = {
      'LGB': LGBMClassifier,
      'SVM': SVC, 
      'KNN': KNeighborsClassifier,
+     'wKNN': KNeighborsClassifier,
      'wKNN': KNeighborsClassifier
                   }
 }
@@ -78,6 +82,51 @@ default_hyparam_space = {'RF': {'n_estimators': Integer(25,750),
                'wKNN': {'n_neighbors': Integer(3,12), 'weights': ['distance']} 
 }
 
+
+class MultiOutputClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, base_classifier=None, n_outputs=1):
+        self.base_classifier = base_classifier
+        self.n_outputs = n_outputs
+        self.classifiers = [self.base_classifier] * self.n_outputs
+
+    def fit(self, X, y):
+        # Check that X and y have correct shape
+        X, y = check_X_y(X, y, multi_output=True)
+
+        # Check that y is a valid classification target
+        check_classification_targets(y)
+
+        # Fit a separate classifier for each output
+        self.classifiers = [self.base_classifier.fit(X, y[:, i]) for i in range(self.n_outputs)]
+
+        return self
+
+    def predict(self, X):
+        # Check if fit has been called
+#         check_is_fitted(self)
+        for m in self.classifiers:
+            check_is_fitted(m)
+
+        # Check input data
+        X = check_array(X)
+
+        # Predict for each output using the corresponding classifier
+        predictions = np.array([classifier.predict(X) for classifier in self.classifiers])
+        return predictions
+
+    def predict_proba(self, X):
+        # Check if fit has been called
+#         check_is_fitted(self)
+        for m in self.classifiers:
+            check_is_fitted(m)
+            
+        # Check input data
+        X = check_array(X)
+
+        # Predict probabilities for each output using the corresponding classifier
+        probs = np.array([classifier.predict_proba(X) for classifier in self.classifiers])
+        return probs
+    
 
 def score_regression(pred, target):
     filter_nan = ~np.isnan(target)
@@ -156,9 +205,11 @@ def sensitivity_specificity(y_true, y_pred, average=None, classes=None):
 # 5. balanced accuracy
 # 6. sensitivity, specificity
 def score_multiclass(pred_prob, target, classes=None):
+    print('Scoring model predictions')
     #flatten if given Nx1 column vector
-    if (len(target.shape)>1) & (target.shape[1]==1):
-        target = target.flatten()
+    if len(target.shape)>1:
+        if target.shape[1]==1:
+            target = target.flatten()
 
     filter_nan = ~np.isnan(target)
     filter_nan = filter_nan.flatten()
@@ -172,7 +223,8 @@ def score_multiclass(pred_prob, target, classes=None):
     pred = pred_prob.argmax(1).astype(np.int32)
     print('unique pred classes: ', np.unique(pred))
     if classes is None:
-        classes = np.unique(target)
+#         classes = np.unique(target)
+        classes = np.arange(pred_prob.shape[1])
     print(classes)
     #handle exception when not all classes are represented in the true target set
     try:
@@ -190,7 +242,6 @@ def score_multiclass(pred_prob, target, classes=None):
             'Balanced Accuracy': acc_balanced, 'Sensitivity': sensitivity, 'Specificity': specificity}
                 
     return pd.DataFrame(data, index=[0])
-
 
 
 
@@ -216,9 +267,11 @@ class Learner:
         
         self.model_type = model_type
         self.task_type = task_type
-        self.model = model_classes[task_type][model_type](**model_params)
+        self.model = None
+        if (task_type is not None) & (model_type is not None):
+            self.model = model_classes[task_type][model_type](**model_params)
+            print(self.model)
         self.classes = None
-        print(self.model)
     
     def predict(self, 
                 features: np.ndarray, 
@@ -247,8 +300,9 @@ class Learner:
             probs = self.model.predict_proba(features)[:,1]
             return [preds, probs]
         elif self.task_type == 'multiclass':
-            preds = self.model.predict(features)
             probs = self.model.predict_proba(features)
+            # preds = self.model.predict(features)
+            preds = np.argmax(probs,axis=-1)
             return [preds, probs]
 
     def score(self, preds, target):
@@ -261,7 +315,15 @@ class Learner:
             preds =  [p.reshape((-1, target.shape[-1])) for p in preds]
             return score_classification(preds, target)
         elif self.task_type == 'multiclass':
-            return score_multiclass(preds[-1], target, classes=self.classes)
+            if self.n_targets > 1:
+                pred_probs = preds[-1]
+                print('pred prob shape:', pred_probs.shape)
+                scores = [score_multiclass(p, t, classes=self.classes) for p, t in zip(pred_probs, target.T)]
+                scores = pd.concat(scores, axis=0).reset_index(drop=True)
+                return scores
+            else:
+                pred_probs = preds[-1]
+                return score_multiclass(preds[-1], target, classes=self.classes)
     
     def validate(self, 
                  features: np.ndarray, 
@@ -372,7 +434,11 @@ class Learner:
         wf_start = wf_list[0]
         self.score_dict = {}
         self.n_targets = dataset.n_targets
-        self.target_name = dataset.activity_tag_ls[0]
+        print('workflow on %d targets'%self.n_targets)
+        if len(dataset.activity_tag_ls) == 1:
+            self.target_name = dataset.activity_tag_ls[0] 
+        else:
+            self.target_name = 'all'
         if workflow=='prospective':
             #first build on train set (don't save model -- checkpoint==None)
             _, X, Y = dataset.get_data(return_separate=True, split='train', shuffle_data = False)
@@ -384,7 +450,7 @@ class Learner:
             # print(np.unique(Y.values))
             scores = self.score(preds, Y.values)
             save_path = get_savepath(results_path, '%s_test_scores.csv'%(self.target_name))
-            output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls[0], save_path=save_path)
+            output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls, save_path=save_path)
             #third build on full dataset and save model to checkpoint
             _, X, Y = dataset.get_data(return_separate=True, shuffle_data = False)
             # print('saving model to ', checkpoint)
@@ -403,7 +469,7 @@ class Learner:
                 preds = self.predict(features=X)
                 scores = self.score(preds, Y.values)
                 save_path = get_savepath(results_path, '%s_test_scores.csv'%(self.target_name))
-                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls[0], save_path=save_path)
+                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls, save_path=save_path)
         elif wf_start =='hyptune':
             self.tune_args = wfargs['tune_args'] #{'folds': wfargs['folds'], 'split_type': wfargs['split_type'], 'n_iter': wfargs['n_iter'], 'param_space': wfargs['param_space']}
             id, X, Y = dataset.get_data(return_separate=True)
@@ -420,7 +486,7 @@ class Learner:
                 preds = self.predict(features=X)
                 scores = self.score(preds, Y.values)
                 save_path = get_savepath(results_path, '%s_test_scores.csv'%(self.model_type))
-                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls[0], save_path=save_path)
+                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls, save_path=save_path)
         else:
             try:
                 self.model = joblib.load(saved_model)
@@ -437,13 +503,13 @@ class Learner:
                     preds = self.predict(features=X)
                     scores = self.score(preds, Y.values)
                     save_path = get_savepath(results_path, '%s_test_scores.csv'%(self.target_name))
-                    output(scores, self.task_type, preds=preds[-1],  id=id, col_tag=dataset.activity_tag_ls[0], save_path=save_path)
+                    output(scores, self.task_type, preds=preds[-1],  id=id, col_tag=dataset.activity_tag_ls, save_path=save_path)
             elif workflow =='predict':
                 id, X, Y = dataset.get_data(return_separate=True)
                 preds = self.predict(features=X)
                 scores = self.score(preds, Y.values)
                 save_path = get_savepath(results_path, '%s_test_scores.csv'%(self.target_name))
-                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls[0], save_path=save_path)
+                output(scores, self.task_type, preds=preds[-1], id=id, col_tag=dataset.activity_tag_ls, save_path=save_path)
             else:
                 print('%s is not a defined workflow, please choose from workflows listed in main script.'%workflow)
 

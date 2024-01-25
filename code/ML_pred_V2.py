@@ -74,6 +74,7 @@ def main():
         parser.add_argument("--tune_paramspace", type=str, default = None, help='Set the hyper parameter space for tuning, e.g. ''{"p0": 10, "p1": 2}''')
         parser.add_argument('--tune_args', type=str, help="Set arguments for hyper parameter tuning", 
                         default=None)
+        parser.add_argument("--filter_protac", action='store_true', help="set flag to filter out protac/large molecules (weight > 700)")
 
         args=parser.parse_args()
         
@@ -119,7 +120,8 @@ def main():
                 'feature_path': args.feature_path,
                 'val_feature_path': args.val_feature_path,
                 'test_feature_path': args.test_feature_path,
-                'workflow': workflow
+                'workflow': workflow,
+                'filter_protac': args.filter_protac
                 }
 
         wfargs = {'saved_model': args.model,

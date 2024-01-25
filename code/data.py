@@ -54,7 +54,8 @@ class Dataset:
         #get descriptor and fingerprints types, as well as activity tag (label type name)
         self.descType, self.fpType, self.smilesCol, self.activity_tag_ls = kwargs['descriptors'], kwargs['fingerprints'], kwargs['structure_col'], kwargs['activity']
         self.feature_path, self.val_feature_path, self.test_feature_path, self.workflow =  kwargs['feature_path'], kwargs['val_feature_path'], kwargs['test_feature_path'], kwargs['workflow']
-        self.n_targets = len(self.activity_tag_ls)
+        self.filter_protac = kwargs['filter_protac']
+        # self.n_targets = len(self.activity_tag_ls)
 #         self.activity_tag = self.activity_tag_ls[0]
         self.molCol = 'Mol'
     
@@ -86,9 +87,13 @@ class Dataset:
         # self.MolInfoCols = [self.smilesCol, self.molCol]
 #         if self.workflow == 'prospective':
 #             self.MolInfoCols += ['Split']
+        
+        #if no activities provided, we assume all target cols (any beyond the structure/smiles col) are select targets
         self.target_cols = [c for c in self.mol_data[base_set].columns if c not in self.MolInfoCols]
-        if self.activity_tag_ls is not None:
+        if self.activity_tag_ls:
             self.target_cols = [c for c in self.activity_tag_ls if c in self.target_cols]
+        # print('activities ls: ', self.activity_tag_ls)
+        self.n_targets = len(self.target_cols)
         self.MolInfoCols.remove(self.molCol)
 
     def load_data(self):
@@ -131,6 +136,10 @@ class Dataset:
     def get_data(self, split=None, return_separate=True, shuffle_data=False):
         if self.workflow == 'prospective':
             data_df =  self.data['data'].copy()
+            if self.filter_protac:
+                print('removing %d potential protacs - mols with weight > 700'%((data_df['MolWeight']>700).sum()))
+                data_df = data_df[data_df['MolWeight']<=700]
+            print('data cols: ', data_df.columns)
             if split is not None:
                 data_df = data_df[data_df.Split==split]
             print('The size of %s set is '%to_str(split), len(data_df))
@@ -141,6 +150,10 @@ class Dataset:
             except:
                 data_df =  next(iter(self.data.values())).copy()
                 print('The size of the data set is ', len(data_df))
+        
+        if (self.workflow == 'predict') & ('Split' in data_df.columns.tolist()):
+            data_df = data_df[data_df.Split=='test']
+            print('The size of %s set is '%to_str(split), len(data_df))
 
         if shuffle_data:
                 # shuffle the data

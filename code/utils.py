@@ -20,17 +20,24 @@ def get_savepath(p, id_ext):
 def output(scores, task_type, preds=None, id=None, col_tag=None, save_path=None):
     print(scores)
     if save_path is not None:
-        scores.to_csv(save_path,  index=False, sep=',')
         if preds is not None:
             if id is None:
                 pred_df = pd.DataFrame(index=np.arange(len(preds)))
             else:
                 pred_df = id
-            if task_type == 'multiclass':
-                for j in range(preds.shape[1]):
-                    pred_df[col_tag+'_pred_%d'%j] = preds[:,j]
+            if len(col_tag) == 1:
+                col_tag = col_tag[0]
+                if task_type == 'multiclass':
+                    for j in range(preds.shape[1]):
+                        pred_df[col_tag+'_pred_%d'%j] = preds[:,j]
+                else:
+                    pred_df[col_tag+'_pred'] = preds
             else:
-                pred_df[col_tag+'_pred'] = preds
+                scores.insert(0, 'Target', col_tag)
+                if task_type == 'multiclass':
+                    for c, p in zip(col_tag, preds):
+                        pred_df[c] = list(p)
+            scores.to_csv(save_path,  index=False, sep=',')
             pred_df.to_csv(save_path.replace('scores', 'preds'), index=False, sep=',')
 
             
