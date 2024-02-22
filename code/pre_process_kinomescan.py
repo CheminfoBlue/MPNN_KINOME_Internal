@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import re
 from rdkit import Chem
-from rdkit.Chem import PandasTools
 from transforms import compute_features
 import argparse
 import os
@@ -14,22 +13,26 @@ parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFo
 
 parser.add_argument("data_path",type=str, help="path to multiclass Kinome data")
 parser.add_argument("--kinase_info", default = 'kinases-on-panel-468.csv', type=str, help="path to kinase-eurofin group mappings")
+parser.add_argument("--adhoc_run", action='store_true', help="set flag to save all class predicted probabilities")
 
 args=parser.parse_args()
+adhoc_run = args.adhoc_run
 
 data_dir = os.path.split(args.data_path)[0]
 args.kinase_info = os.path.join(data_dir, args.kinase_info)
 df = pd.read_csv(args.data_path)
-current_file_path = os.path.join(data_dir, 'kinome_data_multiclass_current.csv')
-df_current = pd.read_csv(current_file_path)
-fp_file_path = os.path.join(data_dir, 'KinomeData_ECFP6_FPs_all.csv')
-df_fps_current = pd.read_csv(fp_file_path)
+
+# fp_file_path = os.path.join(data_dir, 'KinomeData_ECFP6_FPs_all.csv')
+# df_fps_current = pd.read_csv(fp_file_path)
 kinase_select = pd.read_csv(args.kinase_info)
 select_kinase = kinase_select.Full.tolist()
 select_targets = select_kinase+['S(10)', 'S(35)']
 #ensure current target cols are in order of select_targets
-if (df_current.columns[4:]!=select_targets).any():
-    df_current = df_current.loc[:, ['Compound Name', 'Split', 'Structure']+select_targets]
+if not adhoc_run:
+    current_file_path = os.path.join(data_dir, 'kinome_data_multiclass_current.csv')
+    df_current = pd.read_csv(current_file_path)
+    if (df_current.columns[3:]!=select_targets).any():
+        df_current = df_current.loc[:, ['Compound Name', 'Split', 'Structure']+select_targets]
 
 
 def poc_filter(df, select_poc=None):
@@ -84,9 +87,10 @@ df = df.loc[:,~df.isna().all(0)]
 
 #0.b. get & add BLU Id (temporal stamp)
 #remove overlapping between current and new data - by Compound Name / BLU ID
-filter_overlap = df['Compound Name'].isin(df_current['Compound Name'])
-print('Removing %d overlapping records between current and new'%(filter_overlap.sum())) if filter_overlap.sum()>0 else print('No overlapping records between current and new')
-df = df.loc[~filter_overlap,:]
+if not adhoc_run:
+    filter_overlap = df['Compound Name'].isin(df_current['Compound Name'])
+    print('Removing %d overlapping records between current and new'%(filter_overlap.sum())) if filter_overlap.sum()>0 else print('No overlapping records between current and new')
+    df = df.loc[~filter_overlap,:]
 #add ascending temporal order
 df.sort_values('Compound Name', key=lambda col: col.str.split('BLU').str[-1], ascending=True, inplace=True)
 
@@ -105,12 +109,6 @@ df_subset = df_subset.dropna(axis=0, how='all', subset = select_targets, inplace
 df_subset_binned = df_subset.copy()
 df_subset_binned[select_kinase] = binning(df_subset_binned[select_kinase].values, partitions = [10, 35], choicelist=[2, 1, 0])
 
-#4. get molecule weights
-PandasTools.AddMoleculeColumnToFrame(df_subset_binned, smilesCol="Structure", molCol="Mol")
-molCol_data = df_subset_binned.pop('Mol')
-mol_weights = [Chem.rdMolDescriptors.CalcExactMolWt(mol) for mol in molCol_data]
-insert_loc = int(np.where(df_subset_binned.columns=='Structure')[0][0])
-df_subset_binned.insert(loc=insert_loc, column='MolWeight', value=mol_weights) 
 
 #4. define target id-name-shortname df map
 # target_name_id_map = pd.DataFrame(data=np.array([['target'+str(i+1) for i in range(len(poc_cols))], poc_cols]).T,
@@ -122,20 +120,24 @@ df_subset_binned.insert(loc=insert_loc, column='MolWeight', value=mol_weights)
 # S35 = ((df_subset[poc_cols]>10.0) & (df_subset[poc_cols]<=35.0)).sum(1) / df_subset[poc_cols].count(axis=1, numeric_only=True)
 
 #5. compute fingerprints for new data and append to current fingerprints 
-mols = [Chem.MolFromSmiles(smi) for smi in df_subset_binned['Structure'].tolist()]
-ecfp6_fps = compute_features(mols, descType=None, fpType='ECFP6')
-ecfp6_fps.reset_index(drop=True, inplace=True)
-ecfp6_fps.drop(['Smiles'], axis=1, inplace=True)
-df_fps_current = pd.concat([df_fps_current, ecfp6_fps], axis=0, ignore_index=True)
+# mols = [Chem.MolFromSmiles(smi) for smi in df_subset_binned['Structure'].tolist()]
+# ecfp6_fps = compute_features(mols, descType=None, fpType='ECFP6')
+# ecfp6_fps.reset_index(drop=True, inplace=True)
+# ecfp6_fps.drop(['Smiles'], axis=1, inplace=True)
+# df_fps_current = pd.concat([df_fps_current, ecfp6_fps], axis=0, ignore_index=True)
 
 #6. update splits (old df_current --> train & new df_subset_binned --> test) and append -- save updated 'current' files
-df_current['Split'] = 'train'
-df_subset_binned.insert(1, 'Split', 'test')
-if (df_current.columns==df_subset_binned.columns).all():
-    df_current = pd.concat([df_current, df_subset_binned], axis=0, ignore_index=True)
-    df_current.to_csv(current_file_path, index=False)
-    df_fps_current.to_csv(fp_file_path, index=False)
-    print('Updated current kinome profile with %d new records'%len(df_subset_binned))
+if adhoc_run:
+    df_subset_binned.insert(1, 'Split', 'train')
+    df_subset_binned.to_csv(args.data_path+'_preprocessed.csv', index=False)
 else:
-    print('mismatching columns, DO NOT APPEND! \nFiles have not been updated.')
+    df_current['Split'] = 'train'
+    df_subset_binned.insert(1, 'Split', 'test')
+    if (df_current.columns==df_subset_binned.columns).all():
+        df_current = pd.concat([df_current, df_subset_binned], axis=0, ignore_index=True)
+        df_current.to_csv(current_file_path, index=False)
+        # df_fps_current.to_csv(fp_file_path, index=False)
+        print('Updated current kinome profile with %d new records'%len(df_subset_binned))
+    else:
+        print('mismatching columns, DO NOT APPEND! \nFiles have not been updated.')
 
