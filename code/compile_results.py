@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import argparse
 from argparse import *
-from learner import score_regression, score_multiclass
+from model_scoring import score_regression, score_multiclass
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

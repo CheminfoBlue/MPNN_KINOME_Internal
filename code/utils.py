@@ -4,9 +4,6 @@ import pandas as pd
 import numpy as np
 import json
 
-from rdkit.Chem import PandasTools
-from rdkit import Chem
-from rdkit.Chem import AllChem
 
 def to_str(s):
     return(s or "")
@@ -49,16 +46,6 @@ def save_model(model, save_path, xp_id=None, algo=None):
     # save_path = os.path.join(to_str(save_path), "%s_%s_model.rds"%(xp_id,algo))
     joblib.dump(model, save_path)
 
-# def csv2sdf(csv_file, smilesCol = 'SMILES', molCol = 'Mol'):
-#     data = pd.read_csv(csv_file) 
-
-#     PandasTools.AddMoleculeColumnToFrame(data,smilesCol=smilesCol, molCol=molCol) 
-#     data = data.dropna(subset=molCol)  # remove bad structures
-
-#     PandasTools.WriteSDF(data, '%s.sdf' %csv_file[:-4],  molColName=molCol, idName='RowID',properties=list(data.columns))
-    
-#     sdFile=Chem.SDMolSupplier('%s.sdf' %csv_file[:-4])
-#     return sdFile
 
 
 def to_dict(d):
