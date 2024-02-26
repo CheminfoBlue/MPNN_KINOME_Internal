@@ -125,7 +125,7 @@ df_subset_binned[select_kinase] = binning(df_subset_binned[select_kinase].values
 #6. update splits (old df_current --> train & new df_subset_binned --> test) and append -- save updated 'current' files
 if adhoc_run:
     df_subset_binned.insert(1, 'Split', 'train')
-    df_subset_binned.to_csv(args.data_path+'_preprocessed.csv', index=False)
+    df_subset_binned.to_csv(os.path.splitext(args.data_path)[0]+'_preprocessed.csv', index=False)
 else:
     df_current['Split'] = 'train'
     df_subset_binned.insert(1, 'Split', 'test')
