@@ -5,10 +5,6 @@
   ```
   conda env create -f environment.yml
   ```
-  Go to root folder and un-pack the data zip file
-  ```
-  cd ./data/ && unzip init_kinomepred_data.zip && rm init_kinomepred_data.zip && cd ..
-  ```
 
 [Kinome Prediction Pipeline](#run_pipeline) <br>
 Activate KinomePred env
