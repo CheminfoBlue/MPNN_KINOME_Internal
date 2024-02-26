@@ -7,16 +7,16 @@
   ```
 
 [Kinome Prediction Pipeline](#run_pipeline) <br>
-Activate KinomePred env
+Activate MPNNKinomePred env
 ```
 conda activate MPNNKinomePred
 ```
-Run the bash script kinomepred_parallel.sh to run the full Kinome prediction pipeline
+Run the bash script kinomepred_multitask_pipeline.sh to run the full Kinome prediction pipeline
 ```
-nohup bash kinomepred_parallel.sh & 
+nohup bash kinomepred_multitask_pipeline.sh & 
 ```
-[Prediction using combined multi-output model](#run_pipeline) <br>
-Run the bash script kinome_prediction_multioutput.sh to run prediction using the multi-output model, compiled from the individual kinase activity prediction models.
+[Prediction](#run_pipeline) <br>
+Run the bash script kinome_prediction.sh to run prediction using the multi-task model.
 ```
 bash kinome_prediction_multioutput.sh 
 ```
