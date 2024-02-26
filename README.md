@@ -9,7 +9,7 @@
 [Kinome Prediction Pipeline](#run_pipeline) <br>
 Activate KinomePred env
 ```
-conda activate KinomePred
+conda activate MPNNKinomePred
 ```
 Run the bash script kinomepred_parallel.sh to run the full Kinome prediction pipeline
 ```
