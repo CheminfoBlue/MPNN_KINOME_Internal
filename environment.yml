@@ -1,4 +1,4 @@
-name: KinomePred
+name: MPNNKinomePred
 channels:
   - conda-forge
   - defaults
