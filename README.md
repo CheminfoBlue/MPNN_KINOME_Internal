@@ -1,4 +1,4 @@
-# LGB_KINOME_Internal
+# MPNN_KINOME_Internal
 
 [Installation & Getting Started](#installation) <br>
   Create KinomePred conda environment
