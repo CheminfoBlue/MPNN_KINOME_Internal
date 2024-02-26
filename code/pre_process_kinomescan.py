@@ -1,10 +1,6 @@
 import pandas as pd
 import numpy as np
-# import seaborn as sns 
-import matplotlib.pyplot as plt 
 import re
-from rdkit import Chem
-from transforms import compute_features
 import argparse
 import os
 from argparse import *
