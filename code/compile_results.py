@@ -17,7 +17,7 @@ parser.add_argument("--append_results", action='store_true', help="set flag to a
 
 args=parser.parse_args()
 print(args)
-# args=parser.parse_args(["../results/MPNN"])
+# args=parser.parse_args(["./results/MPNN"])
 
 '''
         (without sscore_target_map)  python compile_results.py ./results/LGB/
@@ -475,16 +475,32 @@ def clean_mpnn_structures(smiles_ls):
 
 
 def str_ls_to_float_ls(x):
-    if ', ' in x:
-      delim = ', ' 
+    if isinstance(x, str):
+        if ', ' in x:
+            delim = ', ' 
+        else:
+            delim = ' '
+            x = '['+x.strip('[]').strip()+']'
+            x = ' '.join(x.split())
+        # print('delim: ', delim)
+        return [float(val) for val in x.strip('[]').split(delim)]
     else:
-        delim = ' '
-        x = '['+x.strip('[]').strip()+']'
-        x = ' '.join(x.split())
-    # print('delim: ', delim)
-    return [float(val) for val in x.strip('[]').split(delim)]
+        return x
 
 # results_path = './results/LGB'
+    
+def combine_pred_classes(pred_df, target_cols, n_classes=3):
+    target_class_groups = {target: [f"{target}_class_{i}" for i in range(n_classes)] for target in target_cols}
+    # Create a dictionary where each key is a target name and the value is a list of predictions
+    target_test_preds_dict = {target: pred_df[target_pred_class].values.tolist() for target, target_pred_class in target_class_groups.items()}
+    # Create the DataFrame from the dictionary
+    target_test_preds_concat = pd.DataFrame(target_test_preds_dict)
+    # Drop the original columns from kinome_test_preds
+    pred_df = pred_df.drop(columns=sum(target_class_groups.values(), []), inplace=False)
+    # Assign the concatenated DataFrame back to pred_df
+    pred_df = pd.concat([pred_df, target_test_preds_concat], axis=1)
+    return pred_df
+
 results_path = args.results_path
 
 
@@ -493,14 +509,17 @@ kinome_exp_test = kinome_exp[kinome_exp.Split=='test'].copy().reset_index(drop=T
 del kinome_exp
 kinase_cols = kinome_exp_test.columns[~kinome_exp_test.columns.isin(['Compound Name', 'Split', 'Structure', 'S(10)', 'S(35)'])].tolist()
 
-kinome_test_preds = pd.read_csv(os.path.join(results_path, 'kinome_test_preds.csv'))
-sscore_test_preds = pd.read_csv(os.path.join(results_path, 'SScore_test_preds.csv'))
+kinome_test_preds = pd.read_csv(os.path.join(results_path, 'KinomePred/test_preds.csv'))
+sscore_test_preds = pd.read_csv(os.path.join(results_path, 'SScorePred/test_preds.csv'))
 
 kinome_test_preds.rename({'smiles': 'Structure'}, axis=1, inplace=True)
 sscore_test_preds.rename({'smiles': 'Structure'}, axis=1, inplace=True)
 
 kinome_test_preds.Structure = clean_mpnn_structures(kinome_test_preds.Structure.tolist())
 sscore_test_preds.Structure = clean_mpnn_structures(sscore_test_preds.Structure.tolist())
+
+if any(['_class_' in c for c in kinome_test_preds.columns]):
+    kinome_test_preds = combine_pred_classes(kinome_test_preds, kinase_cols)
 
 kinome_test_preds[kinase_cols]=kinome_test_preds[kinase_cols].applymap(lambda x: str_ls_to_float_ls(x))
 
